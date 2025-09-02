@@ -1,0 +1,41 @@
+{
+  "name": "subscription",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "hardhat build",
+    "build:test": "hardhat build contracts/test/*.sol",
+    "test": "hardhat test",
+    "test:solidity": "hardhat test solidity",
+    "test:nodejs": "hardhat test nodejs",
+    "lint": "yarn lint:sol && yarn lint:ts",
+    "lint:sol": "solhint 'contracts/**/*.sol'",
+    "lint:ts": "eslint 'ignition/**/*.ts' 'test/**/*.ts' 'scripts/**/*.ts' '*.ts' --max-warnings 0 --fix",
+    "fmt:sol": "prettier 'contracts/**/*.sol' -w",
+    "fmt:ts": "prettier 'ignition/**/*.ts' 'test/**/*.ts' 'scripts/**/*.ts' '*.ts' -w"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.34.0",
+    "@nomicfoundation/hardhat-ignition": "^3.0.0",
+    "@nomicfoundation/hardhat-ignition-viem": "^3.0.1",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@solidstate/hardhat-contract-sizer": "^3.0.0",
+    "@types/node": "^22.8.5",
+    "eslint": "^9.34.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "globals": "^16.3.0",
+    "hardhat": "^3.0.0",
+    "jiti": "^2.5.1",
+    "prettier": "^3.6.2",
+    "prettier-plugin-solidity": "^2.1.0",
+    "solhint": "^6.0.1",
+    "solhint-plugin-prettier": "^0.1.0",
+    "typescript": "~5.8.0",
+    "typescript-eslint": "^8.41.0",
+    "viem": "^2.30.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "@openzeppelin/contracts-upgradeable": "^5.4.0"
+  }
+}
