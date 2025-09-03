@@ -6,11 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./PauseControl.sol";
 
 contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUpgradeable {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
@@ -32,7 +34,12 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         address paymentToken; // address(0) for native
         bool autoRenew; // user opted-in for pull renewals
     }
-    mapping(address => Subscription) private _subs;
+
+    struct SubscriptionMap {
+        EnumerableSet.AddressSet _keys;
+        mapping(address => Subscription) _values;
+    }
+    SubscriptionMap private _subs;
 
     // ========= Events =========
     event TokenUpdated(address indexed token, uint256 price);
@@ -110,7 +117,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function setRenewWindow(uint64 newWindow) external onlyAdmin {
-        require(newWindow > 0, "RenewWindow must be greater than 0");
+        require(newWindow > 0, "Renew must be greater than 0");
         require(newWindow < subscriptionDuration, "RenewWindow too long");
         renewWindow = newWindow;
         emit RenewWindowUpdated(newWindow);
@@ -126,7 +133,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     function getSubscription(
         address user
     ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew) {
-        Subscription memory s = _subs[user];
+        Subscription memory s = _subs._values[user];
         active = block.timestamp < s.expiresAt;
         expiresAt = s.expiresAt;
         paymentToken = s.paymentToken;
@@ -134,7 +141,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function isActive(address user) public view returns (bool) {
-        return block.timestamp < _subs[user].expiresAt;
+        return block.timestamp < _subs._values[user].expiresAt;
     }
 
     // ========= User actions =========
@@ -187,13 +194,13 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // --- Manage auto-renew preference ---
     function setAutoRenew(bool enabled) external whenNotPaused {
-        _subs[msg.sender].autoRenew = enabled;
+        _subs._values[msg.sender].autoRenew = enabled;
         emit AutoRenewSet(msg.sender, enabled);
     }
 
     // --- Cancel (just disables autoRenew; subscription remains until expiry) ---
     function cancelAutoRenew() external whenNotPaused {
-        _subs[msg.sender].autoRenew = false;
+        _subs._values[msg.sender].autoRenew = false;
         emit AutoRenewSet(msg.sender, false);
     }
 
@@ -201,7 +208,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // Pull-renew a single user IF they opted-in and allowance is sufficient.
     function renewFor(address user) external nonReentrant onlyRole(SERVICE_ROLE) {
-        Subscription memory s = _subs[user];
+        Subscription memory s = _subs._values[user];
         require(s.autoRenew, "AUTORENEW_OFF");
         require(_isWithinRenewWindow(s.expiresAt), "CANNOT_RENEW");
 
@@ -213,37 +220,13 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         _renew(user, s.paymentToken);
     }
 
-    function renewBatch(address[] calldata users) external nonReentrant onlyRole(SERVICE_ROLE) {
-        for (uint256 i = 0; i < users.length; ) {
-            address u = users[i];
-            Subscription memory s = _subs[u];
-            if (!s.autoRenew) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-            if (!_isWithinRenewWindow(s.expiresAt)) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-            if (s.paymentToken == NATIVE_TOKEN) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
+    function renewBatchWithUsers(address[] calldata users) external nonReentrant onlyRole(SERVICE_ROLE) {
+        _renewBatch(users);
+    }
 
-            bool success = _tryRenew(u, s.paymentToken);
-            if (!success) {
-                emit BatchRenewalFailed(u, s.paymentToken);
-            }
-            unchecked {
-                ++i;
-            }
-        }
+    function renewBatch() external nonReentrant onlyRole(SERVICE_ROLE) {
+        address[] memory users = _subs._keys.values();
+        _renewBatch(users);
     }
 
     // ========= Internals =========
@@ -256,12 +239,12 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function _subscribe(address user, address token) internal {
         _processPayment(user, token);
-        emit Subscribed(user, token, tokenPrice[token], _subs[user].expiresAt);
+        emit Subscribed(user, token, tokenPrice[token], _subs._values[user].expiresAt);
     }
 
     function _renew(address user, address token) internal {
         _processPayment(user, token);
-        emit Renewed(user, token, tokenPrice[token], _subs[user].expiresAt);
+        emit Renewed(user, token, tokenPrice[token], _subs._values[user].expiresAt);
     }
 
     function _processPayment(address user, address token) internal {
@@ -278,9 +261,10 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             IERC20(token).safeTransferFrom(user, treasury, price);
         }
 
-        uint64 newExpiry = _newExpiry(_subs[user].expiresAt);
-        _subs[user].expiresAt = newExpiry;
-        _subs[user].paymentToken = token;
+        uint64 newExpiry = _newExpiry(_subs._values[user].expiresAt);
+        _subs._values[user].expiresAt = newExpiry;
+        _subs._values[user].paymentToken = token;
+        _subs._keys.add(user);
     }
 
     function _permit(
@@ -305,8 +289,51 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         }
     }
 
+    function _renewBatch(address[] memory users) internal {
+        for (uint256 i = 0; i < users.length; ) {
+            address u = users[i];
+            Subscription memory s = _subs._values[u];
+            if (!s.autoRenew) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            if (!_isWithinRenewWindow(s.expiresAt)) {
+                unchecked {
+                    ++i;
+                }
+
+                if (uint64(block.timestamp) > s.expiresAt) {
+                    _remove(u);
+                }
+
+                continue;
+            }
+            if (s.paymentToken == NATIVE_TOKEN) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+
+            bool success = _tryRenew(u, s.paymentToken);
+            if (!success) {
+                emit BatchRenewalFailed(u, s.paymentToken);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _remove(address user) internal returns (bool) {
+        delete _subs._values[user];
+        return _subs._keys.remove(user);
+    }
+
     function _isWithinRenewWindow(uint64 expiresAt) internal view returns (bool) {
-        return uint64(block.timestamp) + renewWindow >= expiresAt;
+        return uint64(block.timestamp) + renewWindow >= expiresAt && expiresAt >= uint64(block.timestamp);
     }
 
     function _tryRenew(address user, address token) internal returns (bool) {
@@ -316,7 +343,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         }
 
         // attempt transfer+extend
-        try this.renewFor_external(user, token) {
+        try this.renewForExternal(user, token) {
             return true;
         } catch {
             return false;
@@ -329,7 +356,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         return true;
     }
 
-    function renewFor_external(address user, address token) external {
+    function renewForExternal(address user, address token) external {
         require(msg.sender == address(this), "ONLY_SELF");
         _renew(user, token);
     }
