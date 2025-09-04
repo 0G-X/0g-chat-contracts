@@ -218,10 +218,7 @@ contract SubscriptionManagerTest is Test {
         assertTrue(active);
 
         // Fast forward to within renew window
-        vm.warp(block.timestamp + 31 days);
-
-        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
-        assertTrue(!active);
+        vm.warp(block.timestamp + 29 days);
 
         vm.prank(admin);
         proxiedSubMgr.renewFor(user);
@@ -229,6 +226,26 @@ contract SubscriptionManagerTest is Test {
         assertTrue(active);
         assertTrue(autoRenew);
         assertGt(expiresAt, block.timestamp);
+    }
+
+    function testFailedSetAutoRenewAndRenewFor() public {
+        vm.startPrank(user);
+        token.approve(address(proxiedSubMgr), 2e18);
+        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.setAutoRenew(true);
+        vm.stopPrank();
+
+        (bool active, uint256 expiresAt, , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+
+        // Fast forward to within renew window
+        vm.warp(block.timestamp + 31 days);
+        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
+        assertTrue(!active);
+
+        vm.prank(admin);
+        vm.expectRevert(bytes("CANNOT_RENEW"));
+        proxiedSubMgr.renewFor(user);
     }
 
     function testFailSubscribeWithWrongValue() public {
