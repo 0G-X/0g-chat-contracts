@@ -27,6 +27,9 @@ importers:
       '@nomicfoundation/hardhat-toolbox-viem':
         specifier: ^5.0.0
         version: 5.0.0(kcehiihujj4x33qpvhspucqifu)
+      '@solidstate/hardhat-abi-exporter':
+        specifier: ^3.0.0
+        version: 3.0.0(@nomicfoundation/hardhat-utils@3.0.0)(hardhat@3.0.2)
       '@solidstate/hardhat-contract-sizer':
         specifier: ^3.0.0
         version: 3.0.0(@nomicfoundation/hardhat-utils@3.0.0)(hardhat@3.0.2)
@@ -655,6 +658,12 @@ packages:
 
   '@solidity-parser/parser@0.20.2':
     resolution: {integrity: sha512-rbu0bzwNvMcwAjH86hiEAcOeRI2EeK8zCkHDrFykh/Al8mvJeFmjy3UrE7GYQjNwOgbGUUtCn5/k8CB8zIu7QA==}
+
+  '@solidstate/hardhat-abi-exporter@3.0.0':
+    resolution: {integrity: sha512-kqZv2aEgCx+5wihPK6Zak6xOoabAwEysIgWiq5aQ2jRWV843KNsE/wGMqqVspvF8TF6hILOeBx5+rOcWHRNqKw==}
+    peerDependencies:
+      '@nomicfoundation/hardhat-utils': ^3.0.0
+      hardhat: ^3.0.0
 
   '@solidstate/hardhat-contract-sizer@3.0.0':
     resolution: {integrity: sha512-A4x5IQWOBqaZzzg2Xuy+ui/wBimx/yUdkY9qkkjqXJi5O5XMfV/3MJZcnqf4/LVNFcgxMz60+LNsJIpdIuCa1Q==}
@@ -2433,6 +2442,15 @@ snapshots:
   '@sindresorhus/is@5.6.0': {}
 
   '@solidity-parser/parser@0.20.2': {}
+
+  '@solidstate/hardhat-abi-exporter@3.0.0(@nomicfoundation/hardhat-utils@3.0.0)(hardhat@3.0.2)':
+    dependencies:
+      '@ethersproject/abi': 5.8.0
+      '@nomicfoundation/hardhat-utils': 3.0.0
+      '@solidstate/hardhat-solidstate-utils': 1.0.0(@nomicfoundation/hardhat-utils@3.0.0)(hardhat@3.0.2)
+      hardhat: 3.0.2
+    transitivePeerDependencies:
+      - debug
 
   '@solidstate/hardhat-contract-sizer@3.0.0(@nomicfoundation/hardhat-utils@3.0.0)(hardhat@3.0.2)':
     dependencies:
