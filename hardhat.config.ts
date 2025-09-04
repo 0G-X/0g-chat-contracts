@@ -2,10 +2,11 @@ import type { HardhatUserConfig } from "hardhat/config";
 
 import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
 import hardhatIgnitionViemPlugin from "@nomicfoundation/hardhat-ignition-viem";
+import hardhatAbiExporter from '@solidstate/hardhat-abi-exporter';
 import { configVariable } from "hardhat/config";
 
 const config: HardhatUserConfig = {
-  plugins: [hardhatToolboxViemPlugin, hardhatIgnitionViemPlugin],
+  plugins: [hardhatToolboxViemPlugin, hardhatIgnitionViemPlugin, hardhatAbiExporter],
   solidity: {
     profiles: {
       default: {
@@ -38,6 +39,14 @@ const config: HardhatUserConfig = {
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
+  },
+  abiExporter: {
+    path: "./abis",
+    runOnCompile: true,
+    clear: true,
+    flat: true,
+    format: "json",
+    except: [/^test.*/],
   },
 };
 

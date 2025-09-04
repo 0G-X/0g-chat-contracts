@@ -19,6 +19,7 @@
     "@nomicfoundation/hardhat-ignition": "^3.0.0",
     "@nomicfoundation/hardhat-ignition-viem": "^3.0.1",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@solidstate/hardhat-abi-exporter": "^3.0.0",
     "@solidstate/hardhat-contract-sizer": "^3.0.0",
     "@types/node": "^22.8.5",
     "eslint": "^9.34.0",
