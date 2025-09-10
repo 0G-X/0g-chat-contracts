@@ -329,7 +329,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             }
         }
 
-        require(atLeastOneSuccess, "require renew");
+        require(atLeastOneSuccess, "success renew");
     }
 
     function _remove(address user) internal returns (bool) {
