@@ -290,6 +290,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function _renewBatch(address[] memory users) internal {
+        bool atLeastOneSuccess = false;
         for (uint256 i = 0; i < users.length; ) {
             address u = users[i];
             Subscription memory s = _subs._values[u];
@@ -320,11 +321,15 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             bool success = _tryRenew(u, s.paymentToken);
             if (!success) {
                 emit BatchRenewalFailed(u, s.paymentToken);
+            } else {
+                atLeastOneSuccess = true;
             }
             unchecked {
                 ++i;
             }
         }
+
+        require(atLeastOneSuccess, "require renew");
     }
 
     function _remove(address user) internal returns (bool) {
