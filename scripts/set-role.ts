@@ -1,8 +1,8 @@
 import hre from "hardhat";
-import { Address, zeroAddress } from "viem";
+import { Address, zeroAddress, keccak256, toHex } from "viem";
 import { zeroGConfig } from "./zeroGConfig.ts";
 
-// TOKEN=0x1234567890abcdef1234567890abcdef12345678 PRICE=100 SUBSCRIPTION=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 pnpm hardhat run scripts/set-token.ts --network localhost
+// ROLE=SERVICE_ROLE USER=0x182b64Ab8A5EfF1CCf3620b376F5788432BE8d11 SUBSCRIPTION=0x182b64Ab8A5EfF1CCf3620b376F5788432BE8d11 pnpm hardhat run scripts/set-role.ts --network localhost
 
 async function main() {
   const subscriptionAddress = process.env.SUBSCRIPTION as Address | undefined;
@@ -11,8 +11,8 @@ async function main() {
   }
   console.log("subscription address:", subscriptionAddress);
 
-  const tokenAddress: Address = (process.env.TOKEN ?? zeroAddress) as Address;
-  const price = process.env.PRICE ? BigInt(process.env.PRICE) : 1n;
+  const roleName: string = process.env.ROLE ?? "SERVICE_ROLE";
+  const userAddress = (process.env.USER ?? zeroAddress) as Address;
 
   const connection = await hre.network.connect();
   console.log("id", connection.id, connection.networkName);
@@ -38,17 +38,20 @@ async function main() {
     networkCfg,
   );
 
-  const readPrice = async () => {
-    const value = await subscription.read.tokenPrice([tokenAddress]);
-    console.log(`💰 Token price: ${value}`);
+  const role = keccak256(toHex(roleName));
+  console.log(`role ${role}`);
+
+  const readRole = async () => {
+    const value = await subscription.read.hasRole([role, userAddress]);
+    console.log(`💰 grant ${userAddress} role ${roleName}: ${value}`);
     return value;
   };
 
-  await readPrice();
+  await readRole();
 
-  await subscription.write.setToken([tokenAddress, price]);
+  await subscription.write.grantRole([role, userAddress]);
 
-  await readPrice();
+  await readRole();
 }
 
 main().catch(console.error);
