@@ -248,6 +248,42 @@ contract SubscriptionManagerTest is Test {
         proxiedSubMgr.renewFor(user);
     }
 
+    function testSetAutoRenewAndRenewBatch() public {
+        vm.startPrank(user);
+        token.approve(address(proxiedSubMgr), 2e18);
+        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.setAutoRenew(true);
+        vm.stopPrank();
+
+        (bool active, uint256 expiresAt, , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+
+        // Fast forward to within renew window
+        vm.warp(block.timestamp + 29 days);
+
+        vm.prank(admin);
+        proxiedSubMgr.renewBatch();
+        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+        assertTrue(autoRenew);
+        assertGt(expiresAt, block.timestamp);
+    }
+
+    function testFailedSetAutoRenewAndRenewBatch() public {
+        vm.startPrank(user);
+        token.approve(address(proxiedSubMgr), 2e18);
+        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.setAutoRenew(true);
+        vm.stopPrank();
+
+        (bool active, , , ) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+
+        vm.expectRevert(bytes("success renew"));
+        vm.prank(admin);
+        proxiedSubMgr.renewBatch();
+    }
+
     function testFailSubscribeWithWrongValue() public {
         vm.prank(admin);
         proxiedSubMgr.setToken(address(0), 0.1 ether);
