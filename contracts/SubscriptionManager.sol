@@ -20,14 +20,6 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     // ========= Parameters =========
     address public constant NATIVE_TOKEN = address(0);
 
-    uint64 public subscriptionDuration;
-    uint64 public renewWindow;
-
-    // Accepted token => fixed price (in that token's smallest units)
-    mapping(address => uint256) public tokenPrice;
-
-    address public treasury;
-
     // ========= Subscription Certificate =========
     struct Subscription {
         uint64 expiresAt; // unix seconds
@@ -39,7 +31,18 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         EnumerableSet.AddressSet _keys;
         mapping(address => Subscription) _values;
     }
-    SubscriptionMap private _subs;
+
+    struct SubscriptionStorage {
+        uint64 subscriptionDuration;
+        uint64 renewWindow;
+        mapping(address => uint256) tokenPrice;
+        address treasury;
+        SubscriptionMap _subs;
+    }
+
+    // According to ERC-7201 formula: erc7201(id) = keccak256(abi.encode(uint256(keccak256("0g-chat.SubscriptionManager")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 internal constant SUBSCRIPTION_STORAGE_LOCATION =
+        0x3673f62f81aa9b1c73642fc72b2bde2dfea88f4f23c1819d31e4365ac5f29400;
 
     // ========= Events =========
     event TokenUpdated(address indexed token, uint256 price);
@@ -77,8 +80,9 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         _setRoleAdmin(PAUSER_ROLE, ADMIN_ROLE);
         _setRoleAdmin(SERVICE_ROLE, ADMIN_ROLE);
 
-        subscriptionDuration = 30 days;
-        renewWindow = 3 days;
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        $.subscriptionDuration = 30 days;
+        $.renewWindow = 3 days;
 
         _setTreasury(_treasury);
     }
@@ -88,16 +92,23 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // ========= Owner admin =========
 
+    function _getSubscriptionStorage() internal pure returns (SubscriptionStorage storage $) {
+        assembly {
+            $.slot := SUBSCRIPTION_STORAGE_LOCATION
+        }
+    }
+
     function setToken(address token, uint256 price) external onlyAdmin {
-        tokenPrice[token] = price;
+        _getSubscriptionStorage().tokenPrice[token] = price;
         emit TokenUpdated(token, price);
     }
 
     function setTokens(address[] calldata tokens, uint256[] calldata prices) external onlyAdmin {
         require(tokens.length == prices.length, "LENGTH_MISMATCH");
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
 
         for (uint256 i = 0; i < tokens.length; ) {
-            tokenPrice[tokens[i]] = prices[i];
+            $.tokenPrice[tokens[i]] = prices[i];
             emit TokenUpdated(tokens[i], prices[i]);
             unchecked {
                 ++i;
@@ -105,26 +116,43 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         }
     }
 
+    function tokenPrice(address token) public view returns (uint256) {
+        return _getSubscriptionStorage().tokenPrice[token];
+    }
+
     function setTreasury(address _treasury) external onlyAdmin {
         _setTreasury(_treasury);
+    }
+
+    function treasury() public view returns (address) {
+        return _getSubscriptionStorage().treasury;
     }
 
     function setSubscriptionDuration(uint64 newDuration) external onlyAdmin {
         require(newDuration > 0, "Duration must be greater than 0");
         require(newDuration <= 365 days, "Duration too long");
-        subscriptionDuration = newDuration;
+        _getSubscriptionStorage().subscriptionDuration = newDuration;
         emit SubscriptionDurationUpdated(newDuration);
+    }
+
+    function subscriptionDuration() public view returns (uint64) {
+        return _getSubscriptionStorage().subscriptionDuration;
     }
 
     function setRenewWindow(uint64 newWindow) external onlyAdmin {
         require(newWindow > 0, "Renew must be greater than 0");
-        require(newWindow < subscriptionDuration, "RenewWindow too long");
-        renewWindow = newWindow;
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        require(newWindow < $.subscriptionDuration, "RenewWindow too long");
+        $.renewWindow = newWindow;
         emit RenewWindowUpdated(newWindow);
     }
 
+    function renewWindow() public view returns (uint64) {
+        return _getSubscriptionStorage().renewWindow;
+    }
+
     function removeToken(address token) external onlyAdmin {
-        tokenPrice[token] = 0;
+        _getSubscriptionStorage().tokenPrice[token] = 0;
         emit TokenUpdated(token, 0);
     }
 
@@ -133,7 +161,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     function getSubscription(
         address user
     ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew) {
-        Subscription memory s = _subs._values[user];
+        Subscription memory s = _getSubscriptionStorage()._subs._values[user];
         active = block.timestamp < s.expiresAt;
         expiresAt = s.expiresAt;
         paymentToken = s.paymentToken;
@@ -141,7 +169,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function isActive(address user) public view returns (bool) {
-        return block.timestamp < _subs._values[user].expiresAt;
+        return block.timestamp < _getSubscriptionStorage()._subs._values[user].expiresAt;
     }
 
     // ========= User actions =========
@@ -194,13 +222,13 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // --- Manage auto-renew preference ---
     function setAutoRenew(bool enabled) external whenNotPaused {
-        _subs._values[msg.sender].autoRenew = enabled;
+        _getSubscriptionStorage()._subs._values[msg.sender].autoRenew = enabled;
         emit AutoRenewSet(msg.sender, enabled);
     }
 
     // --- Cancel (just disables autoRenew; subscription remains until expiry) ---
     function cancelAutoRenew() external whenNotPaused {
-        _subs._values[msg.sender].autoRenew = false;
+        _getSubscriptionStorage()._subs._values[msg.sender].autoRenew = false;
         emit AutoRenewSet(msg.sender, false);
     }
 
@@ -208,7 +236,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // Pull-renew a single user IF they opted-in and allowance is sufficient.
     function renewFor(address user) external nonReentrant onlyRole(SERVICE_ROLE) {
-        Subscription memory s = _subs._values[user];
+        Subscription memory s = _getSubscriptionStorage()._subs._values[user];
         require(s.autoRenew, "AUTORENEW_OFF");
         require(_isWithinRenewWindow(s.expiresAt), "CANNOT_RENEW");
 
@@ -225,7 +253,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function renewBatch() external nonReentrant onlyRole(SERVICE_ROLE) {
-        address[] memory users = _subs._keys.values();
+        address[] memory users = _getSubscriptionStorage()._subs._keys.values();
         _renewBatch(users);
     }
 
@@ -233,38 +261,41 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function _setTreasury(address _treasury) internal {
         if (_treasury == address(0)) revert ZeroAddressTreasury();
-        treasury = _treasury;
+        _getSubscriptionStorage().treasury = _treasury;
         emit TreasuryUpdated(_treasury);
     }
 
     function _subscribe(address user, address token) internal {
         _processPayment(user, token);
-        emit Subscribed(user, token, tokenPrice[token], _subs._values[user].expiresAt);
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        emit Subscribed(user, token, $.tokenPrice[token], $._subs._values[user].expiresAt);
     }
 
     function _renew(address user, address token) internal {
         _processPayment(user, token);
-        emit Renewed(user, token, tokenPrice[token], _subs._values[user].expiresAt);
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        emit Renewed(user, token, $.tokenPrice[token], $._subs._values[user].expiresAt);
     }
 
     function _processPayment(address user, address token) internal {
-        uint256 price = tokenPrice[token];
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        uint256 price = $.tokenPrice[token];
         if (price == 0) revert TokenNotAccepted();
 
         if (token == NATIVE_TOKEN) {
             if (msg.value != price) revert WrongValueSent();
 
-            (bool ok, ) = payable(treasury).call{ value: msg.value }("");
+            (bool ok, ) = payable($.treasury).call{ value: msg.value }("");
             require(ok, "TREASURY_PAYMENT_FAIL");
         } else {
             require(msg.value == 0, "ZERO_VALUE");
-            IERC20(token).safeTransferFrom(user, treasury, price);
+            IERC20(token).safeTransferFrom(user, $.treasury, price);
         }
 
-        uint64 newExpiry = _newExpiry(_subs._values[user].expiresAt);
-        _subs._values[user].expiresAt = newExpiry;
-        _subs._values[user].paymentToken = token;
-        _subs._keys.add(user);
+        uint64 newExpiry = _newExpiry($._subs._values[user].expiresAt);
+        $._subs._values[user].expiresAt = newExpiry;
+        $._subs._values[user].paymentToken = token;
+        $._subs._keys.add(user);
     }
 
     function _permit(
@@ -282,18 +313,20 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function _newExpiry(uint64 current) internal view returns (uint64) {
         uint64 nowTs = uint64(block.timestamp);
+        uint64 duration = _getSubscriptionStorage().subscriptionDuration;
         if (nowTs >= current) {
-            return nowTs + uint64(subscriptionDuration);
+            return nowTs + duration;
         } else {
-            return current + uint64(subscriptionDuration);
+            return current + duration;
         }
     }
 
     function _renewBatch(address[] memory users) internal {
         bool atLeastOneSuccess = false;
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
         for (uint256 i = 0; i < users.length; ) {
             address u = users[i];
-            Subscription memory s = _subs._values[u];
+            Subscription memory s = $._subs._values[u];
             if (!s.autoRenew) {
                 unchecked {
                     ++i;
@@ -333,17 +366,20 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function _remove(address user) internal returns (bool) {
-        delete _subs._values[user];
-        return _subs._keys.remove(user);
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        delete $._subs._values[user];
+        return $._subs._keys.remove(user);
     }
 
     function _isWithinRenewWindow(uint64 expiresAt) internal view returns (bool) {
-        return uint64(block.timestamp) + renewWindow >= expiresAt && expiresAt >= uint64(block.timestamp);
+        return
+            uint64(block.timestamp) + _getSubscriptionStorage().renewWindow >= expiresAt &&
+            expiresAt >= uint64(block.timestamp);
     }
 
     function _tryRenew(address user, address token) internal returns (bool) {
         // check allowance+balance before attempting
-        if (!allowanceAndBalanceSufficient(token, user, tokenPrice[token])) {
+        if (!_allowanceAndBalanceSufficient(token, user, _getSubscriptionStorage().tokenPrice[token])) {
             return false;
         }
 
@@ -355,7 +391,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         }
     }
 
-    function allowanceAndBalanceSufficient(address token, address user, uint256 amount) internal view returns (bool) {
+    function _allowanceAndBalanceSufficient(address token, address user, uint256 amount) internal view returns (bool) {
         if (IERC20(token).allowance(user, address(this)) < amount) return false;
         if (IERC20(token).balanceOf(user) < amount) return false;
         return true;
