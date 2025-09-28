@@ -1,7 +1,7 @@
 import { defineChain } from "viem";
 
 export const zeroGConfig = defineChain({
-  id: 16601,
+  id: 16602,
   name: "0G Newton Testnet",
   nativeCurrency: { name: "A0GI", symbol: "A0GI", decimals: 18 },
   rpcUrls: {
@@ -12,7 +12,7 @@ export const zeroGConfig = defineChain({
   blockExplorers: {
     default: {
       name: "0G BlockChain Explorer",
-      url: "https://chainscan-newton.0g.ai",
+      url: "https://chainscan-galileo.0g.ai",
     },
   },
   testnet: true,

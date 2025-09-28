@@ -4,17 +4,25 @@ import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
 import hardhatIgnitionViemPlugin from "@nomicfoundation/hardhat-ignition-viem";
 import hardhatAbiExporter from "@solidstate/hardhat-abi-exporter";
 import { configVariable } from "hardhat/config";
+import hardhatContractSizer from '@solidstate/hardhat-contract-sizer';
 
 const config: HardhatUserConfig = {
   plugins: [
     hardhatToolboxViemPlugin,
     hardhatIgnitionViemPlugin,
     hardhatAbiExporter,
+    hardhatContractSizer,
   ],
   solidity: {
     profiles: {
       default: {
         version: "0.8.28",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
       },
       production: {
         version: "0.8.28",
@@ -56,6 +64,13 @@ const config: HardhatUserConfig = {
     clear: true,
     flat: true,
     format: "json",
+    except: [/test.*/],
+  },
+  contractSizer: {
+    alphaSort: false,
+    runOnCompile: true,
+    strict: false,
+    flat: true,
     except: [/test.*/],
   },
 };
