@@ -25,7 +25,7 @@
     "eslint": "^9.34.0",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "globals": "^16.3.0",
-    "hardhat": "^3.0.0",
+    "hardhat": "3.0.6",
     "jiti": "^2.5.1",
     "prettier": "^3.6.2",
     "prettier-plugin-solidity": "^2.1.0",
