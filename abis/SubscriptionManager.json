@@ -331,6 +331,11 @@
         "indexed": true
       },
       {
+        "type": "uint8",
+        "name": "tier",
+        "indexed": false
+      },
+      {
         "type": "uint256",
         "name": "price",
         "indexed": false
@@ -357,6 +362,28 @@
       {
         "type": "address",
         "name": "account",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "name": "UpgradeTier",
+    "inputs": [
+      {
+        "type": "address",
+        "name": "user",
+        "indexed": true
+      },
+      {
+        "type": "uint8",
+        "name": "oldTier",
+        "indexed": false
+      },
+      {
+        "type": "uint8",
+        "name": "newTier",
         "indexed": false
       }
     ]
@@ -563,6 +590,10 @@
       {
         "type": "bool",
         "name": "autoRenew"
+      },
+      {
+        "type": "uint8",
+        "name": "tier"
       }
     ]
   },
@@ -886,6 +917,10 @@
         "name": "token"
       },
       {
+        "type": "uint8",
+        "name": "tier"
+      },
+      {
         "type": "uint256",
         "name": "price"
       }
@@ -901,6 +936,10 @@
       {
         "type": "address[]",
         "name": "tokens"
+      },
+      {
+        "type": "uint8",
+        "name": "tier"
       },
       {
         "type": "uint256[]",
@@ -931,6 +970,10 @@
       {
         "type": "address",
         "name": "token"
+      },
+      {
+        "type": "uint8",
+        "name": "tier"
       }
     ],
     "outputs": []
@@ -941,7 +984,12 @@
     "constant": false,
     "stateMutability": "payable",
     "payable": true,
-    "inputs": [],
+    "inputs": [
+      {
+        "type": "uint8",
+        "name": "tier"
+      }
+    ],
     "outputs": []
   },
   {
@@ -961,6 +1009,10 @@
       {
         "type": "uint256",
         "name": "amount"
+      },
+      {
+        "type": "uint8",
+        "name": "tier"
       },
       {
         "type": "uint8",
@@ -1018,6 +1070,10 @@
       {
         "type": "address",
         "name": "token"
+      },
+      {
+        "type": "uint8",
+        "name": "tier"
       }
     ],
     "outputs": [
@@ -1045,6 +1101,20 @@
     "constant": false,
     "payable": false,
     "inputs": [],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "upgradeTier",
+    "constant": false,
+    "stateMutability": "payable",
+    "payable": true,
+    "inputs": [
+      {
+        "type": "uint8",
+        "name": "newTier"
+      }
+    ],
     "outputs": []
   },
   {

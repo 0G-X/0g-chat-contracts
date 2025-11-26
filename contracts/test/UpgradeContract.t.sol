@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
+import { SubscriptionManager } from "../SubscriptionManager.sol";
 contract UpgradeContract is UUPSUpgradeable {
     uint64 public subscriptionDuration;
 
@@ -19,10 +19,15 @@ contract UpgradeContract is UUPSUpgradeable {
 
     function getSubscription(
         address /* user */
-    ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew) {
+    )
+        external
+        view
+        returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew, SubscriptionManager.Tier tier)
+    {
         active = true;
         expiresAt = block.timestamp;
         paymentToken = address(0);
         autoRenew = true;
+        tier = SubscriptionManager.Tier.Enterprise;
     }
 }

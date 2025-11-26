@@ -17,6 +17,12 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
 
+    enum Tier {
+        Plus,
+        Pro,
+        Enterprise
+    }
+
     // ========= Parameters =========
     address public constant NATIVE_TOKEN = address(0);
 
@@ -25,6 +31,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         uint64 expiresAt; // unix seconds
         address paymentToken; // address(0) for native
         bool autoRenew; // user opted-in for pull renewals
+        Tier tier;
     }
 
     struct SubscriptionMap {
@@ -35,7 +42,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     struct SubscriptionStorage {
         uint64 subscriptionDuration;
         uint64 renewWindow;
-        mapping(address => uint256) tokenPrice;
+        mapping(address => mapping(Tier => uint256)) tokenPrice;
         address treasury;
         SubscriptionMap _subs;
     }
@@ -45,7 +52,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         0x3673f62f81aa9b1c73642fc72b2bde2dfea88f4f23c1819d31e4365ac5f29400;
 
     // ========= Events =========
-    event TokenUpdated(address indexed token, uint256 price);
+    event TokenUpdated(address indexed token, Tier tier, uint256 price);
     event TreasuryUpdated(address indexed treasury);
     event Subscribed(address indexed user, address indexed token, uint256 price, uint256 newExpiry);
     event Renewed(address indexed user, address indexed token, uint256 price, uint256 newExpiry);
@@ -53,6 +60,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     event SubscriptionDurationUpdated(uint256 newDuration);
     event RenewWindowUpdated(uint256 newWindow);
     event BatchRenewalFailed(address indexed user, address indexed token);
+    event UpgradeTier(address indexed user, Tier oldTier, Tier newTier);
 
     // ========= Errors =========
     error TokenNotAccepted();
@@ -98,26 +106,26 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         }
     }
 
-    function setToken(address token, uint256 price) external onlyAdmin {
-        _getSubscriptionStorage().tokenPrice[token] = price;
-        emit TokenUpdated(token, price);
+    function setToken(address token, Tier tier, uint256 price) external onlyAdmin {
+        _getSubscriptionStorage().tokenPrice[token][tier] = price;
+        emit TokenUpdated(token, tier, price);
     }
 
-    function setTokens(address[] calldata tokens, uint256[] calldata prices) external onlyAdmin {
+    function setTokens(address[] calldata tokens, Tier tier, uint256[] calldata prices) external onlyAdmin {
         require(tokens.length == prices.length, "LENGTH_MISMATCH");
         SubscriptionStorage storage $ = _getSubscriptionStorage();
 
         for (uint256 i = 0; i < tokens.length; ) {
-            $.tokenPrice[tokens[i]] = prices[i];
-            emit TokenUpdated(tokens[i], prices[i]);
+            $.tokenPrice[tokens[i]][tier] = prices[i];
+            emit TokenUpdated(tokens[i], tier, prices[i]);
             unchecked {
                 ++i;
             }
         }
     }
 
-    function tokenPrice(address token) public view returns (uint256) {
-        return _getSubscriptionStorage().tokenPrice[token];
+    function tokenPrice(address token, Tier tier) public view returns (uint256) {
+        return _getSubscriptionStorage().tokenPrice[token][tier];
     }
 
     function setTreasury(address _treasury) external onlyAdmin {
@@ -152,20 +160,28 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function removeToken(address token) external onlyAdmin {
-        _getSubscriptionStorage().tokenPrice[token] = 0;
-        emit TokenUpdated(token, 0);
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+
+        $.tokenPrice[token][Tier.Plus] = 0;
+        $.tokenPrice[token][Tier.Pro] = 0;
+        $.tokenPrice[token][Tier.Enterprise] = 0;
+
+        emit TokenUpdated(token, Tier.Plus, 0);
+        emit TokenUpdated(token, Tier.Pro, 0);
+        emit TokenUpdated(token, Tier.Enterprise, 0);
     }
 
     // ========= Public views  =========
 
     function getSubscription(
         address user
-    ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew) {
+    ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew, Tier tier) {
         Subscription memory s = _getSubscriptionStorage()._subs._values[user];
         active = block.timestamp < s.expiresAt;
         expiresAt = s.expiresAt;
         paymentToken = s.paymentToken;
         autoRenew = s.autoRenew;
+        tier = s.tier;
     }
 
     function isActive(address user) public view returns (bool) {
@@ -175,8 +191,8 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     // ========= User actions =========
 
     // --- Pay with ERC20 using allowance already set ---
-    function subscribe(address token) external nonReentrant whenNotPaused {
-        _subscribe(msg.sender, token);
+    function subscribe(address token, Tier tier) external nonReentrant whenNotPaused {
+        _subscribe(msg.sender, token, tier);
     }
 
     // --- Pay with ERC20 in one tx using EIP-2612 permit (if token supports it) ---
@@ -184,18 +200,19 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         address token,
         uint256 deadline,
         uint256 amount,
+        Tier tier,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) external nonReentrant whenNotPaused {
         require(token != NATIVE_TOKEN, "NATIVE_TOKEN");
         _permit(token, msg.sender, amount, deadline, v, r, s);
-        _subscribe(msg.sender, token);
+        _subscribe(msg.sender, token, tier);
     }
 
     // --- Pay with native (ETH, etc.) ---
-    function subscribeNative() external payable nonReentrant whenNotPaused {
-        _subscribe(msg.sender, NATIVE_TOKEN);
+    function subscribeNative(Tier tier) external payable nonReentrant whenNotPaused {
+        _subscribe(msg.sender, NATIVE_TOKEN, tier);
     }
 
     // --- Renew with ERC20 (pull, requires allowance or prior permit call) ---
@@ -218,6 +235,49 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function renewNative() external payable nonReentrant whenNotPaused {
         _renew(msg.sender, NATIVE_TOKEN);
+    }
+
+    function upgradeTier(Tier newTier) external payable nonReentrant whenNotPaused {
+        SubscriptionStorage storage $ = _getSubscriptionStorage();
+        Subscription memory s = $._subs._values[msg.sender];
+
+        address token = s.paymentToken;
+        Tier oldTier = s.tier;
+
+        uint256 newPrice = $.tokenPrice[token][newTier];
+        if (newPrice == 0) revert TokenNotAccepted();
+
+        require(uint(newTier) > uint(oldTier), "Can only upgrade");
+
+        uint64 nowTime = uint64(block.timestamp);
+        uint64 expiry = s.expiresAt;
+        uint256 remainingValue = 0;
+
+        if (expiry > nowTime) {
+            uint256 remainingSecs = expiry - nowTime;
+            remainingValue = ($.tokenPrice[token][oldTier] * remainingSecs) / $.subscriptionDuration;
+        }
+
+        uint256 upgradeCost = 0;
+        if (newPrice > remainingValue) {
+            upgradeCost = newPrice - remainingValue;
+        }
+
+        if (token == NATIVE_TOKEN) {
+            if (msg.value < upgradeCost) revert WrongValueSent();
+
+            (bool ok, ) = payable($.treasury).call{ value: msg.value }("");
+            require(ok, "TREASURY_PAYMENT_FAIL");
+        } else {
+            require(msg.value == 0, "ZERO_VALUE");
+            IERC20(token).safeTransferFrom(msg.sender, $.treasury, upgradeCost);
+        }
+
+        $._subs._values[msg.sender].expiresAt = nowTime + $.subscriptionDuration;
+        $._subs._values[msg.sender].tier = newTier;
+        $._subs._keys.add(msg.sender);
+
+        emit UpgradeTier(msg.sender, oldTier, newTier);
     }
 
     // --- Manage auto-renew preference ---
@@ -265,21 +325,22 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         emit TreasuryUpdated(_treasury);
     }
 
-    function _subscribe(address user, address token) internal {
-        _processPayment(user, token);
+    function _subscribe(address user, address token, Tier tier) internal {
+        _processPayment(user, token, tier);
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        emit Subscribed(user, token, $.tokenPrice[token], $._subs._values[user].expiresAt);
+        emit Subscribed(user, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
     }
 
     function _renew(address user, address token) internal {
-        _processPayment(user, token);
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        emit Renewed(user, token, $.tokenPrice[token], $._subs._values[user].expiresAt);
+        Tier tier = $._subs._values[user].tier;
+        _processPayment(user, token, tier);
+        emit Renewed(user, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
     }
 
-    function _processPayment(address user, address token) internal {
+    function _processPayment(address user, address token, Tier tier) internal {
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        uint256 price = $.tokenPrice[token];
+        uint256 price = $.tokenPrice[token][tier];
         if (price == 0) revert TokenNotAccepted();
 
         if (token == NATIVE_TOKEN) {
@@ -295,6 +356,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         uint64 newExpiry = _newExpiry($._subs._values[user].expiresAt);
         $._subs._values[user].expiresAt = newExpiry;
         $._subs._values[user].paymentToken = token;
+        $._subs._values[user].tier = tier;
         $._subs._keys.add(user);
     }
 
@@ -351,7 +413,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
                 continue;
             }
 
-            bool success = _tryRenew(u, s.paymentToken);
+            bool success = _tryRenew(u, s.paymentToken, s.tier);
             if (!success) {
                 emit BatchRenewalFailed(u, s.paymentToken);
             } else {
@@ -377,9 +439,9 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             expiresAt >= uint64(block.timestamp);
     }
 
-    function _tryRenew(address user, address token) internal returns (bool) {
+    function _tryRenew(address user, address token, Tier tier) internal returns (bool) {
         // check allowance+balance before attempting
-        if (!_allowanceAndBalanceSufficient(token, user, _getSubscriptionStorage().tokenPrice[token])) {
+        if (!_allowanceAndBalanceSufficient(token, user, _getSubscriptionStorage().tokenPrice[token][tier])) {
             return false;
         }
 
