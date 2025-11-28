@@ -373,7 +373,7 @@ contract SubscriptionManagerTest is Test {
         assertGt(expiresAt, block.timestamp);
         assertTrue(tier == SubscriptionManager.Tier.Plus);
 
-        vm.expectRevert(SubscriptionManager.TokenNotAccepted.selector);
+        vm.expectRevert(bytes("user exist"));
         proxiedSubMgr.upgradeTier{ value: 0.2 ether }(SubscriptionManager.Tier.Enterprise);
     }
 

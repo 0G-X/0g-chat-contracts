@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./PauseControl.sol";
 
@@ -239,6 +240,8 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function upgradeTier(Tier newTier) external payable nonReentrant whenNotPaused {
         SubscriptionStorage storage $ = _getSubscriptionStorage();
+
+        require($._subs._keys.contains(msg.sender), "user exist");
         Subscription memory s = $._subs._values[msg.sender];
 
         address token = s.paymentToken;
@@ -255,22 +258,21 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
         if (expiry > nowTime) {
             uint256 remainingSecs = expiry - nowTime;
-            remainingValue = ($.tokenPrice[token][oldTier] * remainingSecs) / $.subscriptionDuration;
+            remainingValue = Math.mulDiv($.tokenPrice[token][oldTier], remainingSecs, $.subscriptionDuration);
         }
 
-        uint256 upgradeCost = 0;
         if (newPrice > remainingValue) {
-            upgradeCost = newPrice - remainingValue;
-        }
+            uint256 upgradeCost = newPrice - remainingValue;
 
-        if (token == NATIVE_TOKEN) {
-            if (msg.value < upgradeCost) revert WrongValueSent();
+            if (token == NATIVE_TOKEN) {
+                if (msg.value < upgradeCost) revert WrongValueSent();
 
-            (bool ok, ) = payable($.treasury).call{ value: msg.value }("");
-            require(ok, "TREASURY_PAYMENT_FAIL");
-        } else {
-            require(msg.value == 0, "ZERO_VALUE");
-            IERC20(token).safeTransferFrom(msg.sender, $.treasury, upgradeCost);
+                (bool ok, ) = payable($.treasury).call{ value: msg.value }("");
+                require(ok, "TREASURY_PAYMENT_FAIL");
+            } else {
+                require(msg.value == 0, "ZERO_VALUE");
+                IERC20(token).safeTransferFrom(msg.sender, $.treasury, upgradeCost);
+            }
         }
 
         $._subs._values[msg.sender].expiresAt = nowTime + $.subscriptionDuration;
