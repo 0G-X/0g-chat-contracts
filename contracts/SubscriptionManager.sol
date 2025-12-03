@@ -267,8 +267,14 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             if (token == NATIVE_TOKEN) {
                 if (msg.value < upgradeCost) revert WrongValueSent();
 
-                (bool ok, ) = payable($.treasury).call{ value: msg.value }("");
+                (bool ok, ) = payable($.treasury).call{ value: upgradeCost }("");
                 require(ok, "TREASURY_PAYMENT_FAIL");
+
+                uint256 refund = msg.value - upgradeCost;
+                if (refund > 0) {
+                    (bool ok, ) = payable(msg.sender).call{ value: refund }("");
+                    require(ok, "refund failed");
+                }
             } else {
                 require(msg.value == 0, "ZERO_VALUE");
                 IERC20(token).safeTransferFrom(msg.sender, $.treasury, upgradeCost);

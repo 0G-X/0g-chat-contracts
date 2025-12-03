@@ -72,7 +72,7 @@ contract SubscriptionManagerTest is Test {
         vm.startPrank(admin);
         proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Plus, 1e18);
         proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Pro, 2e18);
-        proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Enterprise, 2e18);
+        proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Enterprise, 3e18);
         vm.stopPrank();
 
         // Mint tokens to user
@@ -349,10 +349,11 @@ contract SubscriptionManagerTest is Test {
         assertGt(expiresAt, block.timestamp);
         assertTrue(tier == SubscriptionManager.Tier.Plus);
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + 15 days);
         vm.prank(user);
-        proxiedSubMgr.upgradeTier{ value: 0.2 ether }(SubscriptionManager.Tier.Enterprise);
+        proxiedSubMgr.upgradeTier{ value: 0.3 ether }(SubscriptionManager.Tier.Enterprise);
         (, uint256 newExpiresAt, , , SubscriptionManager.Tier newTier) = proxiedSubMgr.getSubscription(user);
+        assertTrue(user.balance == 0.75 ether);
 
         assertGt(newExpiresAt, block.timestamp);
         console.logUint(uint(newTier));
