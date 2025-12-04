@@ -4,7 +4,7 @@ import hardhatToolboxViemPlugin from "@nomicfoundation/hardhat-toolbox-viem";
 import hardhatIgnitionViemPlugin from "@nomicfoundation/hardhat-ignition-viem";
 import hardhatAbiExporter from "@solidstate/hardhat-abi-exporter";
 import { configVariable } from "hardhat/config";
-import hardhatContractSizer from '@solidstate/hardhat-contract-sizer';
+import hardhatContractSizer from "@solidstate/hardhat-contract-sizer";
 
 const config: HardhatUserConfig = {
   plugins: [

@@ -7,6 +7,7 @@ import { UpgradeContract } from "./UpgradeContract.t.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import { console } from "forge-std/console.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("MockToken", "MTK") {}
@@ -69,7 +70,9 @@ contract SubscriptionManagerTest is Test {
 
         // Give admin all roles
         vm.startPrank(admin);
-        proxiedSubMgr.setToken(address(token), 1e18);
+        proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Plus, 1e18);
+        proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Pro, 2e18);
+        proxiedSubMgr.setToken(address(token), SubscriptionManager.Tier.Enterprise, 3e18);
         vm.stopPrank();
 
         // Mint tokens to user
@@ -117,16 +120,19 @@ contract SubscriptionManagerTest is Test {
     function testRemoveToken() public {
         vm.prank(admin);
         proxiedSubMgr.removeToken(address(token));
-        assertEq(proxiedSubMgr.tokenPrice(address(token)), 0);
+        assertEq(proxiedSubMgr.tokenPrice(address(token), SubscriptionManager.Tier.Plus), 0);
+        assertEq(proxiedSubMgr.tokenPrice(address(token), SubscriptionManager.Tier.Pro), 0);
+        assertEq(proxiedSubMgr.tokenPrice(address(token), SubscriptionManager.Tier.Enterprise), 0);
     }
 
     function testSubscribeERC20() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 1e18);
-        proxiedSubMgr.subscribe(address(token));
-        (bool active, uint256 expiresAt, , ) = proxiedSubMgr.getSubscription(user);
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
+        (bool active, uint256 expiresAt, , , SubscriptionManager.Tier tier) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
         assertGt(expiresAt, block.timestamp);
+        assertTrue(tier == SubscriptionManager.Tier.Plus);
         vm.stopPrank();
     }
 
@@ -136,7 +142,7 @@ contract SubscriptionManagerTest is Test {
         tokenPermit.mint(user, 10e18);
 
         vm.startPrank(admin);
-        proxiedSubMgr.setToken(address(tokenPermit), 1e18);
+        proxiedSubMgr.setToken(address(tokenPermit), SubscriptionManager.Tier.Plus, 1e18);
         vm.stopPrank();
 
         uint256 amount = 1 ether;
@@ -149,7 +155,15 @@ contract SubscriptionManagerTest is Test {
 
         vm.startPrank(user);
 
-        proxiedSubMgr.subscribeWithPermit(address(tokenPermit), deadline, amount, v, r, s);
+        proxiedSubMgr.subscribeWithPermit(
+            address(tokenPermit),
+            deadline,
+            amount,
+            SubscriptionManager.Tier.Plus,
+            v,
+            r,
+            s
+        );
     }
 
     function testFailSubscribeERC20WithPermit() public {
@@ -165,17 +179,17 @@ contract SubscriptionManagerTest is Test {
 
         vm.startPrank(user);
         vm.expectRevert();
-        proxiedSubMgr.subscribeWithPermit(address(token), deadline, amount, v, r, s);
+        proxiedSubMgr.subscribeWithPermit(address(token), deadline, amount, SubscriptionManager.Tier.Plus, v, r, s);
     }
 
     function testSubscribeNative() public {
         vm.prank(admin);
-        proxiedSubMgr.setToken(address(0), 0.1 ether);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Plus, 0.1 ether);
 
         vm.deal(user, 1 ether);
         vm.prank(user);
-        proxiedSubMgr.subscribeNative{ value: 0.1 ether }();
-        (bool active, uint256 expiresAt, , ) = proxiedSubMgr.getSubscription(user);
+        proxiedSubMgr.subscribeNative{ value: 0.1 ether }(SubscriptionManager.Tier.Plus);
+        (bool active, uint256 expiresAt, , , ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
         assertGt(expiresAt, block.timestamp);
     }
@@ -183,26 +197,26 @@ contract SubscriptionManagerTest is Test {
     function testRenewERC20() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 2e18);
-        proxiedSubMgr.subscribe(address(token));
-        (, uint256 firstExpiry, , ) = proxiedSubMgr.getSubscription(user);
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
+        (, uint256 firstExpiry, , , ) = proxiedSubMgr.getSubscription(user);
         proxiedSubMgr.renew(address(token));
-        (, uint256 secondExpiry, , ) = proxiedSubMgr.getSubscription(user);
+        (, uint256 secondExpiry, , , ) = proxiedSubMgr.getSubscription(user);
         assertGt(secondExpiry, firstExpiry);
         vm.stopPrank();
     }
 
     function testRenewNative() public {
         vm.prank(admin);
-        proxiedSubMgr.setToken(address(0), 0.1 ether);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Plus, 0.1 ether);
 
         vm.deal(user, 1 ether);
         vm.startPrank(user);
-        proxiedSubMgr.subscribeNative{ value: 0.1 ether }();
+        proxiedSubMgr.subscribeNative{ value: 0.1 ether }(SubscriptionManager.Tier.Plus);
 
-        (, uint256 firstExpiry, , ) = proxiedSubMgr.getSubscription(user);
+        (, uint256 firstExpiry, , , ) = proxiedSubMgr.getSubscription(user);
 
         proxiedSubMgr.renewNative{ value: 0.1 ether }();
-        (, uint256 secondExpiry, , ) = proxiedSubMgr.getSubscription(user);
+        (, uint256 secondExpiry, , , ) = proxiedSubMgr.getSubscription(user);
         assertGt(secondExpiry, firstExpiry);
         vm.stopPrank();
     }
@@ -210,11 +224,11 @@ contract SubscriptionManagerTest is Test {
     function testSetAutoRenewAndRenewFor() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 2e18);
-        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
         proxiedSubMgr.setAutoRenew(true);
         vm.stopPrank();
 
-        (bool active, uint256 expiresAt, , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        (bool active, uint256 expiresAt, , bool autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
 
         // Fast forward to within renew window
@@ -222,7 +236,7 @@ contract SubscriptionManagerTest is Test {
 
         vm.prank(admin);
         proxiedSubMgr.renewFor(user);
-        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
+        (active, expiresAt, , autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
         assertTrue(autoRenew);
         assertGt(expiresAt, block.timestamp);
@@ -231,16 +245,16 @@ contract SubscriptionManagerTest is Test {
     function testFailedSetAutoRenewAndRenewFor() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 2e18);
-        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
         proxiedSubMgr.setAutoRenew(true);
         vm.stopPrank();
 
-        (bool active, uint256 expiresAt, , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        (bool active, uint256 expiresAt, , bool autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
 
         // Fast forward to within renew window
         vm.warp(block.timestamp + 31 days);
-        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
+        (active, expiresAt, , autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(!active);
 
         vm.prank(admin);
@@ -251,11 +265,11 @@ contract SubscriptionManagerTest is Test {
     function testSetAutoRenewAndRenewBatch() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 2e18);
-        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
         proxiedSubMgr.setAutoRenew(true);
         vm.stopPrank();
 
-        (bool active, uint256 expiresAt, , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        (bool active, uint256 expiresAt, , bool autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
 
         // Fast forward to within renew window
@@ -263,7 +277,7 @@ contract SubscriptionManagerTest is Test {
 
         vm.prank(admin);
         proxiedSubMgr.renewBatch();
-        (active, expiresAt, , autoRenew) = proxiedSubMgr.getSubscription(user);
+        (active, expiresAt, , autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
         assertTrue(autoRenew);
         assertGt(expiresAt, block.timestamp);
@@ -272,11 +286,11 @@ contract SubscriptionManagerTest is Test {
     function testFailedSetAutoRenewAndRenewBatch() public {
         vm.startPrank(user);
         token.approve(address(proxiedSubMgr), 2e18);
-        proxiedSubMgr.subscribe(address(token));
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
         proxiedSubMgr.setAutoRenew(true);
         vm.stopPrank();
 
-        (bool active, , , ) = proxiedSubMgr.getSubscription(user);
+        (bool active, , , , ) = proxiedSubMgr.getSubscription(user);
         assertTrue(active);
 
         vm.expectRevert(bytes("success renew"));
@@ -286,21 +300,86 @@ contract SubscriptionManagerTest is Test {
 
     function testFailSubscribeWithWrongValue() public {
         vm.prank(admin);
-        proxiedSubMgr.setToken(address(0), 0.1 ether);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Plus, 0.1 ether);
 
         vm.deal(user, 1 ether);
         vm.prank(user);
         vm.expectRevert(SubscriptionManager.WrongValueSent.selector);
-        proxiedSubMgr.subscribeNative{ value: 0.2 ether }();
+        proxiedSubMgr.subscribeNative{ value: 0.2 ether }(SubscriptionManager.Tier.Plus);
     }
 
     function testFailSubscribeWithUnacceptedToken() public {
         vm.prank(user);
         vm.expectRevert(SubscriptionManager.TokenNotAccepted.selector);
-        proxiedSubMgr.subscribe(address(0xdead));
+        proxiedSubMgr.subscribe(address(0xdead), SubscriptionManager.Tier.Plus);
     }
+
+    function testUpgradeTier() public {
+        vm.startPrank(user);
+        token.approve(address(proxiedSubMgr), 3e18);
+        proxiedSubMgr.subscribe(address(token), SubscriptionManager.Tier.Plus);
+        (bool active, uint256 expiresAt, , , SubscriptionManager.Tier tier) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+        assertGt(expiresAt, block.timestamp);
+
+        assertTrue(tier == SubscriptionManager.Tier.Plus);
+        // console.logUint(uint(tier));
+
+        proxiedSubMgr.upgradeTier(SubscriptionManager.Tier.Enterprise);
+        (, uint256 newExpiresAt, , , SubscriptionManager.Tier newTier) = proxiedSubMgr.getSubscription(user);
+
+        // console.logUint(uint(newTier));
+        assertGt(newExpiresAt, block.timestamp);
+        assertTrue(newTier == SubscriptionManager.Tier.Enterprise);
+
+        vm.stopPrank();
+    }
+
+    function testUpgradeTierNative() public {
+        vm.prank(admin);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Plus, 0.1 ether);
+        vm.prank(admin);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Enterprise, 0.2 ether);
+
+        vm.deal(user, 1 ether);
+        vm.prank(user);
+        proxiedSubMgr.subscribeNative{ value: 0.1 ether }(SubscriptionManager.Tier.Plus);
+        (bool active, uint256 expiresAt, , , SubscriptionManager.Tier tier) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+        assertGt(expiresAt, block.timestamp);
+        assertTrue(tier == SubscriptionManager.Tier.Plus);
+
+        vm.warp(block.timestamp + 15 days);
+        vm.prank(user);
+        proxiedSubMgr.upgradeTier{ value: 0.3 ether }(SubscriptionManager.Tier.Enterprise);
+        (, uint256 newExpiresAt, , , SubscriptionManager.Tier newTier) = proxiedSubMgr.getSubscription(user);
+        assertTrue(user.balance == 0.75 ether);
+
+        assertGt(newExpiresAt, block.timestamp);
+        console.logUint(uint(newTier));
+        assertTrue(newTier == SubscriptionManager.Tier.Enterprise);
+
+        vm.stopPrank();
+    }
+
+    function testFailedUpgradeTier() public {
+        vm.prank(admin);
+        proxiedSubMgr.setToken(address(0), SubscriptionManager.Tier.Plus, 0.1 ether);
+
+        vm.deal(user, 1 ether);
+        vm.prank(user);
+        proxiedSubMgr.subscribeNative{ value: 0.1 ether }(SubscriptionManager.Tier.Plus);
+        (bool active, uint256 expiresAt, , , SubscriptionManager.Tier tier) = proxiedSubMgr.getSubscription(user);
+        assertTrue(active);
+        assertGt(expiresAt, block.timestamp);
+        assertTrue(tier == SubscriptionManager.Tier.Plus);
+
+        vm.expectRevert(bytes("user exist"));
+        proxiedSubMgr.upgradeTier{ value: 0.2 ether }(SubscriptionManager.Tier.Enterprise);
+    }
+
     function testUpgrade() public {
-        (bool active, , , bool autoRenew) = proxiedSubMgr.getSubscription(user);
+        (bool active, , , bool autoRenew, ) = proxiedSubMgr.getSubscription(user);
         assertTrue(!active);
         assertTrue(!autoRenew);
 
@@ -310,7 +389,7 @@ contract SubscriptionManagerTest is Test {
         vm.prank(admin);
         proxiedSubMgr.upgradeToAndCall(address(newSubMgr), "");
 
-        (active, , , autoRenew) = proxiedSubMgr.getSubscription(user);
+        (active, , , autoRenew, ) = proxiedSubMgr.getSubscription(user);
 
         assertTrue(active);
         assertTrue(autoRenew);
