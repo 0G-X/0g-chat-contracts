@@ -5,9 +5,10 @@ import { zeroGConfig } from "./zeroGConfig.ts";
 // TOKEN=0x1234567890abcdef1234567890abcdef12345678 TIER=0 PRICE=100 SUBSCRIPTION=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 pnpm hardhat run scripts/set-token.ts --network localhost
 
 enum Tier {
-  Plus = 0,
-  Pro = 1,
-  Enterprise = 2,
+  Free = 0,
+  Plus = 1,
+  Pro = 2,
+  Enterprise = 3,
 }
 
 async function main() {
@@ -46,14 +47,14 @@ async function main() {
   );
 
   const readPrice = async () => {
-    const value = await subscription.read.tokenPrice([tokenAddress, tier]);
+    const value = await subscription.read.tokenPrice([tokenAddress, Number(tier)]);
     console.log(`💰 Token price: ${value}`);
     return value;
   };
 
   await readPrice();
 
-  await subscription.write.setToken([tokenAddress, tier, price]);
+  await subscription.write.setToken([tokenAddress, Number(tier), price]);
 
   await readPrice();
 }

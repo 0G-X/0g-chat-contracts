@@ -576,10 +576,6 @@
     ],
     "outputs": [
       {
-        "type": "bool",
-        "name": "active"
-      },
-      {
         "type": "uint256",
         "name": "expiresAt"
       },
@@ -594,6 +590,24 @@
       {
         "type": "uint8",
         "name": "tier"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "getTier",
+    "constant": true,
+    "stateMutability": "view",
+    "payable": false,
+    "inputs": [
+      {
+        "type": "address",
+        "name": "user"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "uint8"
       }
     ]
   },
@@ -648,24 +662,6 @@
       }
     ],
     "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "isActive",
-    "constant": true,
-    "stateMutability": "view",
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "user"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "bool"
-      }
-    ]
   },
   {
     "type": "function",

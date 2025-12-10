@@ -19,12 +19,7 @@ contract UpgradeContract is UUPSUpgradeable {
 
     function getSubscription(
         address /* user */
-    )
-        external
-        view
-        returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew, SubscriptionManager.Tier tier)
-    {
-        active = true;
+    ) external view returns (uint256 expiresAt, address paymentToken, bool autoRenew, SubscriptionManager.Tier tier) {
         expiresAt = block.timestamp;
         paymentToken = address(0);
         autoRenew = true;
