@@ -19,6 +19,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
 
     enum Tier {
+        Free,
         Plus,
         Pro,
         Enterprise
@@ -108,6 +109,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function setToken(address token, Tier tier, uint256 price) external onlyAdmin {
+        require(tier != Tier.Free, "FREE TIER");
         _getSubscriptionStorage().tokenPrice[token][tier] = price;
         emit TokenUpdated(token, tier, price);
     }
@@ -176,17 +178,25 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function getSubscription(
         address user
-    ) external view returns (bool active, uint256 expiresAt, address paymentToken, bool autoRenew, Tier tier) {
+    ) external view returns (uint256 expiresAt, address paymentToken, bool autoRenew, Tier tier) {
         Subscription memory s = _getSubscriptionStorage()._subs._values[user];
-        active = block.timestamp < s.expiresAt;
+        if (block.timestamp < s.expiresAt) {
+            tier = s.tier;
+        } else {
+            tier = Tier.Free;
+        }
         expiresAt = s.expiresAt;
         paymentToken = s.paymentToken;
         autoRenew = s.autoRenew;
-        tier = s.tier;
     }
 
-    function isActive(address user) public view returns (bool) {
-        return block.timestamp < _getSubscriptionStorage()._subs._values[user].expiresAt;
+    function getTier(address user) public view returns (Tier) {
+        Subscription memory s = _getSubscriptionStorage()._subs._values[user];
+        if (block.timestamp < s.expiresAt) {
+            return s.tier;
+        } else {
+            return Tier.Free;
+        }
     }
 
     // ========= User actions =========
@@ -272,7 +282,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
                 uint256 refund = msg.value - upgradeCost;
                 if (refund > 0) {
-                    (bool ok, ) = payable(msg.sender).call{ value: refund }("");
+                    (ok, ) = payable(msg.sender).call{ value: refund }("");
                     require(ok, "refund failed");
                 }
             } else {
