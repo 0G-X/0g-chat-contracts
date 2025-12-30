@@ -51,7 +51,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     struct SubscriptionStorage {
-        uint64 subscriptionDuration;
+        uint64 subscriptionDurationInMonth;
         uint64 renewWindow;
         mapping(address => mapping(Tier => uint256)) tokenPrice;
         address treasury;
@@ -111,7 +111,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         _setRoleAdmin(SERVICE_ROLE, ADMIN_ROLE);
 
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        $.subscriptionDuration = 1;
+        $.subscriptionDurationInMonth = 1;
         $.renewWindow = 3 days;
 
         _setTreasury(_treasury);
@@ -163,18 +163,18 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     function setSubscriptionDuration(uint64 newDuration) external onlyAdmin {
         require(newDuration > 0, "Duration must be greater than 0");
         require(newDuration <= 12, "Duration too long");
-        _getSubscriptionStorage().subscriptionDuration = newDuration;
+        _getSubscriptionStorage().subscriptionDurationInMonth = newDuration;
         emit SubscriptionDurationUpdated(newDuration);
     }
 
     function subscriptionDuration() public view returns (uint64) {
-        return _getSubscriptionStorage().subscriptionDuration;
+        return _getSubscriptionStorage().subscriptionDurationInMonth;
     }
 
     function setRenewWindow(uint64 newWindow) external onlyAdmin {
         require(newWindow > 0, "Renew must be greater than 0");
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        require(newWindow < $.subscriptionDuration * 30 days, "RenewWindow too long");
+        require(newWindow < $.subscriptionDurationInMonth * 30 days, "RenewWindow too long");
         $.renewWindow = newWindow;
         emit RenewWindowUpdated(newWindow);
     }
@@ -262,7 +262,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             remainingValue = Math.mulDiv(
                 oldPrice,
                 remainingSecs,
-                uint256(expiry) - _subMonths(expiry, $.subscriptionDuration)
+                uint256(expiry) - _subMonths(expiry, $.subscriptionDurationInMonth)
             );
         }
 
@@ -286,7 +286,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             }
         }
 
-        $._subs._values[subscribeTo].expiresAt = uint64(_addMonths(nowTime, $.subscriptionDuration));
+        $._subs._values[subscribeTo].expiresAt = uint64(_addMonths(nowTime, $.subscriptionDurationInMonth));
         $._subs._values[subscribeTo].tier = newTier;
         $._subs._keys.add(subscribeTo);
 
@@ -350,7 +350,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function _newExpiry(uint64 current) internal view returns (uint64) {
         uint64 nowTs = uint64(block.timestamp);
-        uint64 duration = _getSubscriptionStorage().subscriptionDuration;
+        uint64 duration = _getSubscriptionStorage().subscriptionDurationInMonth;
         if (nowTs >= current) {
             return uint64(_addMonths(nowTs, duration));
         } else {
