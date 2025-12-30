@@ -26,7 +26,7 @@ describe("Test Proxy", async function () {
         },
       );
 
-      assert.equal(await instance.read.subscriptionDuration(), 2592000n);
+      assert.equal(await instance.read.subscriptionDuration(), 1n);
 
       assert.equal(
         await instance.read.treasury(),
