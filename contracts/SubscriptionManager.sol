@@ -18,11 +18,20 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
     bytes32 public constant SERVICE_ROLE = keccak256("SERVICE_ROLE");
 
+    uint256 public constant SECONDS_PER_DAY = 24 * 60 * 60;
+    int256 public constant OFFSET19700101 = 2440588;
+
     enum Tier {
         Free,
         Plus,
         Pro,
-        Enterprise
+        Enterprise,
+        Reserved4,
+        Reserved5,
+        Reserved6,
+        Reserved7,
+        Reserved8,
+        Reserved9
     }
 
     // ========= Parameters =========
@@ -42,7 +51,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     struct SubscriptionStorage {
-        uint64 subscriptionDuration;
+        uint64 subscriptionDurationInMonth;
         uint64 renewWindow;
         mapping(address => mapping(Tier => uint256)) tokenPrice;
         address treasury;
@@ -56,13 +65,24 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     // ========= Events =========
     event TokenUpdated(address indexed token, Tier tier, uint256 price);
     event TreasuryUpdated(address indexed treasury);
-    event Subscribed(address indexed user, address indexed token, uint256 price, uint256 newExpiry);
-    event Renewed(address indexed user, address indexed token, uint256 price, uint256 newExpiry);
-    event AutoRenewSet(address indexed user, bool enabled);
-    event SubscriptionDurationUpdated(uint256 newDuration);
-    event RenewWindowUpdated(uint256 newWindow);
-    event BatchRenewalFailed(address indexed user, address indexed token);
-    event UpgradeTier(address indexed user, Tier oldTier, Tier newTier);
+    event Subscribed(
+        address indexed user,
+        address indexed sender,
+        address indexed token,
+        uint256 price,
+        uint256 newExpiry
+    );
+    event Renewed(
+        address indexed user,
+        address indexed sender,
+        address indexed token,
+        uint256 price,
+        uint256 newExpiry
+    );
+    event AutoRenewSet(address indexed user, bool indexed enabled);
+    event SubscriptionDurationUpdated(uint256 indexed newDuration);
+    event RenewWindowUpdated(uint256 indexed newWindow);
+    event UpgradeTier(address indexed user, address indexed sender, Tier oldTier, Tier newTier);
 
     // ========= Errors =========
     error TokenNotAccepted();
@@ -91,7 +111,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         _setRoleAdmin(SERVICE_ROLE, ADMIN_ROLE);
 
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        $.subscriptionDuration = 30 days;
+        $.subscriptionDurationInMonth = 1;
         $.renewWindow = 3 days;
 
         _setTreasury(_treasury);
@@ -115,6 +135,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     }
 
     function setTokens(address[] calldata tokens, Tier tier, uint256[] calldata prices) external onlyAdmin {
+        require(tier != Tier.Free, "FREE TIER");
         require(tokens.length == prices.length, "LENGTH_MISMATCH");
         SubscriptionStorage storage $ = _getSubscriptionStorage();
 
@@ -141,19 +162,19 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     function setSubscriptionDuration(uint64 newDuration) external onlyAdmin {
         require(newDuration > 0, "Duration must be greater than 0");
-        require(newDuration <= 365 days, "Duration too long");
-        _getSubscriptionStorage().subscriptionDuration = newDuration;
+        require(newDuration <= 12, "Duration too long");
+        _getSubscriptionStorage().subscriptionDurationInMonth = newDuration;
         emit SubscriptionDurationUpdated(newDuration);
     }
 
     function subscriptionDuration() public view returns (uint64) {
-        return _getSubscriptionStorage().subscriptionDuration;
+        return _getSubscriptionStorage().subscriptionDurationInMonth;
     }
 
     function setRenewWindow(uint64 newWindow) external onlyAdmin {
         require(newWindow > 0, "Renew must be greater than 0");
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        require(newWindow < $.subscriptionDuration, "RenewWindow too long");
+        require(newWindow < $.subscriptionDurationInMonth * 30 days, "RenewWindow too long");
         $.renewWindow = newWindow;
         emit RenewWindowUpdated(newWindow);
     }
@@ -201,66 +222,36 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     // ========= User actions =========
 
-    // --- Pay with ERC20 using allowance already set ---
-    function subscribe(address token, Tier tier) external nonReentrant whenNotPaused {
-        _subscribe(msg.sender, token, tier);
-    }
-
-    // --- Pay with ERC20 in one tx using EIP-2612 permit (if token supports it) ---
-    function subscribeWithPermit(
-        address token,
-        uint256 deadline,
-        uint256 amount,
-        Tier tier,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external nonReentrant whenNotPaused {
-        require(token != NATIVE_TOKEN, "NATIVE_TOKEN");
-        _permit(token, msg.sender, amount, deadline, v, r, s);
-        _subscribe(msg.sender, token, tier);
-    }
-
     // --- Pay with native (ETH, etc.) ---
-    function subscribeNative(Tier tier) external payable nonReentrant whenNotPaused {
-        _subscribe(msg.sender, NATIVE_TOKEN, tier);
+    function subscribeNative(Tier tier, address recipient) external payable nonReentrant whenNotPaused {
+        address subscribeTo = recipient == address(0) ? msg.sender : recipient;
+        require(subscribeTo != address(0), "Invalid recipient address");
+        _subscribe(subscribeTo, NATIVE_TOKEN, tier);
     }
 
     // --- Renew with ERC20 (pull, requires allowance or prior permit call) ---
-    function renew(address token) external nonReentrant whenNotPaused {
-        _renew(msg.sender, token);
+    function renewNative(address recipient) external payable nonReentrant whenNotPaused {
+        address subscribeTo = recipient == address(0) ? msg.sender : recipient;
+        require(subscribeTo != address(0), "Invalid recipient address");
+        _renew(subscribeTo, NATIVE_TOKEN);
     }
 
-    function renewWithPermit(
-        address token,
-        uint256 deadline,
-        uint256 amount,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external nonReentrant whenNotPaused {
-        require(token != NATIVE_TOKEN, "NATIVE_TOKEN");
-        _permit(token, msg.sender, amount, deadline, v, r, s);
-        _renew(msg.sender, token);
-    }
+    function upgradeTier(Tier newTier, address recipient) external payable nonReentrant whenNotPaused {
+        address subscribeTo = recipient == address(0) ? msg.sender : recipient;
+        require(subscribeTo != address(0), "Invalid recipient address");
 
-    function renewNative() external payable nonReentrant whenNotPaused {
-        _renew(msg.sender, NATIVE_TOKEN);
-    }
-
-    function upgradeTier(Tier newTier) external payable nonReentrant whenNotPaused {
         SubscriptionStorage storage $ = _getSubscriptionStorage();
 
-        require($._subs._keys.contains(msg.sender), "user exist");
-        Subscription memory s = $._subs._values[msg.sender];
+        require($._subs._keys.contains(subscribeTo), "user not exist");
+        Subscription memory s = $._subs._values[subscribeTo];
 
         address token = s.paymentToken;
         Tier oldTier = s.tier;
 
         uint256 newPrice = $.tokenPrice[token][newTier];
-        if (newPrice == 0) revert TokenNotAccepted();
-
-        require(uint(newTier) > uint(oldTier), "Can only upgrade");
+        uint256 oldPrice = $.tokenPrice[token][oldTier];
+        if (newPrice == 0 || oldPrice == 0) revert TokenNotAccepted();
+        require(newPrice > oldPrice, "Can only upgrade");
 
         uint64 nowTime = uint64(block.timestamp);
         uint64 expiry = s.expiresAt;
@@ -268,7 +259,11 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
         if (expiry > nowTime) {
             uint256 remainingSecs = expiry - nowTime;
-            remainingValue = Math.mulDiv($.tokenPrice[token][oldTier], remainingSecs, $.subscriptionDuration);
+            remainingValue = Math.mulDiv(
+                oldPrice,
+                remainingSecs,
+                uint256(expiry) - _subMonths(expiry, $.subscriptionDurationInMonth)
+            );
         }
 
         if (newPrice > remainingValue) {
@@ -291,11 +286,11 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             }
         }
 
-        $._subs._values[msg.sender].expiresAt = nowTime + $.subscriptionDuration;
-        $._subs._values[msg.sender].tier = newTier;
-        $._subs._keys.add(msg.sender);
+        $._subs._values[subscribeTo].expiresAt = uint64(_addMonths(nowTime, $.subscriptionDurationInMonth));
+        $._subs._values[subscribeTo].tier = newTier;
+        $._subs._keys.add(subscribeTo);
 
-        emit UpgradeTier(msg.sender, oldTier, newTier);
+        emit UpgradeTier(subscribeTo, msg.sender, oldTier, newTier);
     }
 
     // --- Manage auto-renew preference ---
@@ -310,31 +305,6 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         emit AutoRenewSet(msg.sender, false);
     }
 
-    // ========= Keeper/bot helpers (anyone can call) =========
-
-    // Pull-renew a single user IF they opted-in and allowance is sufficient.
-    function renewFor(address user) external nonReentrant onlyRole(SERVICE_ROLE) {
-        Subscription memory s = _getSubscriptionStorage()._subs._values[user];
-        require(s.autoRenew, "AUTORENEW_OFF");
-        require(_isWithinRenewWindow(s.expiresAt), "CANNOT_RENEW");
-
-        if (s.paymentToken == NATIVE_TOKEN) {
-            // Native auto-renew cannot be pulled (no allowance concept).
-            revert TokenNotAccepted();
-        }
-
-        _renew(user, s.paymentToken);
-    }
-
-    function renewBatchWithUsers(address[] calldata users) external nonReentrant onlyRole(SERVICE_ROLE) {
-        _renewBatch(users);
-    }
-
-    function renewBatch() external nonReentrant onlyRole(SERVICE_ROLE) {
-        address[] memory users = _getSubscriptionStorage()._subs._keys.values();
-        _renewBatch(users);
-    }
-
     // ========= Internals =========
 
     function _setTreasury(address _treasury) internal {
@@ -346,14 +316,14 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
     function _subscribe(address user, address token, Tier tier) internal {
         _processPayment(user, token, tier);
         SubscriptionStorage storage $ = _getSubscriptionStorage();
-        emit Subscribed(user, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
+        emit Subscribed(user, msg.sender, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
     }
 
     function _renew(address user, address token) internal {
         SubscriptionStorage storage $ = _getSubscriptionStorage();
         Tier tier = $._subs._values[user].tier;
         _processPayment(user, token, tier);
-        emit Renewed(user, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
+        emit Renewed(user, msg.sender, token, $.tokenPrice[token][tier], $._subs._values[user].expiresAt);
     }
 
     function _processPayment(address user, address token, Tier tier) internal {
@@ -368,7 +338,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
             require(ok, "TREASURY_PAYMENT_FAIL");
         } else {
             require(msg.value == 0, "ZERO_VALUE");
-            IERC20(token).safeTransferFrom(user, $.treasury, price);
+            IERC20(token).safeTransferFrom(msg.sender, $.treasury, price);
         }
 
         uint64 newExpiry = _newExpiry($._subs._values[user].expiresAt);
@@ -378,110 +348,15 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
         $._subs._keys.add(user);
     }
 
-    function _permit(
-        address token,
-        address user,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) internal {
-        // Best-effort call; if token doesn't support EIP-2612 this will revert.
-        IERC20Permit(token).permit(user, address(this), value, deadline, v, r, s);
-    }
-
     function _newExpiry(uint64 current) internal view returns (uint64) {
         uint64 nowTs = uint64(block.timestamp);
-        uint64 duration = _getSubscriptionStorage().subscriptionDuration;
+        uint64 duration = _getSubscriptionStorage().subscriptionDurationInMonth;
         if (nowTs >= current) {
-            return nowTs + duration;
+            return uint64(_addMonths(nowTs, duration));
         } else {
-            return current + duration;
+            return uint64(_addMonths(current, duration));
         }
     }
-
-    function _renewBatch(address[] memory users) internal {
-        bool atLeastOneSuccess = false;
-        SubscriptionStorage storage $ = _getSubscriptionStorage();
-        for (uint256 i = 0; i < users.length; ) {
-            address u = users[i];
-            Subscription memory s = $._subs._values[u];
-            if (!s.autoRenew) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-            if (!_isWithinRenewWindow(s.expiresAt)) {
-                unchecked {
-                    ++i;
-                }
-
-                if (uint64(block.timestamp) > s.expiresAt) {
-                    _remove(u);
-                }
-
-                continue;
-            }
-            if (s.paymentToken == NATIVE_TOKEN) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-
-            bool success = _tryRenew(u, s.paymentToken, s.tier);
-            if (!success) {
-                emit BatchRenewalFailed(u, s.paymentToken);
-            } else {
-                atLeastOneSuccess = true;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-
-        require(atLeastOneSuccess, "success renew");
-    }
-
-    function _remove(address user) internal returns (bool) {
-        SubscriptionStorage storage $ = _getSubscriptionStorage();
-        delete $._subs._values[user];
-        return $._subs._keys.remove(user);
-    }
-
-    function _isWithinRenewWindow(uint64 expiresAt) internal view returns (bool) {
-        return
-            uint64(block.timestamp) + _getSubscriptionStorage().renewWindow >= expiresAt &&
-            expiresAt >= uint64(block.timestamp);
-    }
-
-    function _tryRenew(address user, address token, Tier tier) internal returns (bool) {
-        // check allowance+balance before attempting
-        if (!_allowanceAndBalanceSufficient(token, user, _getSubscriptionStorage().tokenPrice[token][tier])) {
-            return false;
-        }
-
-        // attempt transfer+extend
-        try this.renewForExternal(user, token) {
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    function _allowanceAndBalanceSufficient(address token, address user, uint256 amount) internal view returns (bool) {
-        if (IERC20(token).allowance(user, address(this)) < amount) return false;
-        if (IERC20(token).balanceOf(user) < amount) return false;
-        return true;
-    }
-
-    function renewForExternal(address user, address token) external {
-        require(msg.sender == address(this), "ONLY_SELF");
-        _renew(user, token);
-    }
-
     // Fallback rejects accidental native sends (must use subscribeNative/renewNative)
     receive() external payable {
         revert WrongValueSent();
@@ -489,5 +364,85 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
     fallback() external payable {
         revert WrongValueSent();
+    }
+
+    function _addMonths(uint256 timestamp, uint256 _months) internal pure returns (uint256 newTimestamp) {
+        (uint256 year, uint256 month, uint256 day) = _daysToDate(timestamp / SECONDS_PER_DAY);
+
+        month += _months;
+        year += (month - 1) / 12;
+        month = ((month - 1) % 12) + 1;
+
+        uint256 daysInMonth = _getDaysInMonth(year, month);
+        if (day > daysInMonth) {
+            day = daysInMonth;
+        }
+
+        newTimestamp = _daysFromDate(year, month, day) * SECONDS_PER_DAY + (timestamp % SECONDS_PER_DAY);
+        require(newTimestamp >= timestamp);
+    }
+
+    function _subMonths(uint256 timestamp, uint256 _months) internal pure returns (uint256 newTimestamp) {
+        (uint256 year, uint256 month, uint256 day) = _daysToDate(timestamp / SECONDS_PER_DAY);
+        uint256 yearMonth = year * 12 + (month - 1) - _months;
+        year = yearMonth / 12;
+        month = (yearMonth % 12) + 1;
+        uint256 daysInMonth = _getDaysInMonth(year, month);
+        if (day > daysInMonth) {
+            day = daysInMonth;
+        }
+        newTimestamp = _daysFromDate(year, month, day) * SECONDS_PER_DAY + (timestamp % SECONDS_PER_DAY);
+        require(newTimestamp <= timestamp);
+    }
+
+    function _daysToDate(uint256 _days) internal pure returns (uint256 year, uint256 month, uint256 day) {
+        unchecked {
+            int256 __days = int256(_days);
+
+            int256 L = __days + 68569 + OFFSET19700101;
+            int256 N = (4 * L) / 146097;
+            L = L - (146097 * N + 3) / 4;
+            int256 _year = (4000 * (L + 1)) / 1461001;
+            L = L - (1461 * _year) / 4 + 31;
+            int256 _month = (80 * L) / 2447;
+            int256 _day = L - (2447 * _month) / 80;
+            L = _month / 11;
+            _month = _month + 2 - 12 * L;
+            _year = 100 * (N - 49) + _year + L;
+
+            year = uint256(_year);
+            month = uint256(_month);
+            day = uint256(_day);
+        }
+    }
+
+    function _daysFromDate(uint256 year, uint256 month, uint256 day) internal pure returns (uint256 _days) {
+        require(year >= 1970);
+        int256 _year = int256(year);
+        int256 _month = int256(month);
+        int256 _day = int256(day);
+
+        int256 __days = _day -
+            32075 +
+            (1461 * (_year + 4800 + (_month - 14) / 12)) / 4 +
+            (367 * (_month - 2 - ((_month - 14) / 12) * 12)) / 12 -
+            (3 * ((_year + 4900 + (_month - 14) / 12) / 100)) / 4 -
+            OFFSET19700101;
+
+        _days = uint256(__days);
+    }
+
+    function _getDaysInMonth(uint256 year, uint256 month) internal pure returns (uint256 daysInMonth) {
+        if (month == 1 || month == 3 || month == 5 || month == 7 || month == 8 || month == 10 || month == 12) {
+            daysInMonth = 31;
+        } else if (month != 2) {
+            daysInMonth = 30;
+        } else {
+            daysInMonth = _isLeapYear(year) ? 29 : 28;
+        }
+    }
+
+    function _isLeapYear(uint256 year) internal pure returns (bool leapYear) {
+        leapYear = ((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0);
     }
 }
