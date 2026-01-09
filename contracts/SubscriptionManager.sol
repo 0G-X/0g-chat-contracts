@@ -242,7 +242,7 @@ contract SubscriptionManager is ReentrancyGuardUpgradeable, PauseControl, UUPSUp
 
         SubscriptionStorage storage $ = _getSubscriptionStorage();
 
-        require($._subs._keys.contains(subscribeTo), "user exist");
+        require($._subs._keys.contains(subscribeTo), "user not exist");
         Subscription memory s = $._subs._values[subscribeTo];
 
         address token = s.paymentToken;

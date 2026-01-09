@@ -59,7 +59,7 @@ contract SubscriptionManagerTest is Test {
     address user = vm.addr(userPk);
 
     uint256 userPk2 = 0xA11CD;
-    address user2 = vm.addr(userPk);
+    address user2 = vm.addr(userPk2);
 
     function setUp() public {
         token = new MockERC20();
@@ -266,7 +266,7 @@ contract SubscriptionManagerTest is Test {
         assertGt(expiresAt, block.timestamp);
         assertTrue(tier == SubscriptionManager.Tier.Plus);
 
-        vm.expectRevert(bytes("user exist"));
+        vm.expectRevert(bytes("user not exist"));
         proxiedSubMgr.upgradeTier{ value: 0.2 ether }(SubscriptionManager.Tier.Enterprise, address(0));
     }
 
