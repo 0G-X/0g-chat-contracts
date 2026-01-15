@@ -131,23 +131,6 @@
       {
         "type": "bool",
         "name": "enabled",
-        "indexed": false
-      }
-    ]
-  },
-  {
-    "type": "event",
-    "anonymous": false,
-    "name": "BatchRenewalFailed",
-    "inputs": [
-      {
-        "type": "address",
-        "name": "user",
-        "indexed": true
-      },
-      {
-        "type": "address",
-        "name": "token",
         "indexed": true
       }
     ]
@@ -184,7 +167,7 @@
       {
         "type": "uint256",
         "name": "newWindow",
-        "indexed": false
+        "indexed": true
       }
     ]
   },
@@ -196,6 +179,11 @@
       {
         "type": "address",
         "name": "user",
+        "indexed": true
+      },
+      {
+        "type": "address",
+        "name": "sender",
         "indexed": true
       },
       {
@@ -293,6 +281,11 @@
       },
       {
         "type": "address",
+        "name": "sender",
+        "indexed": true
+      },
+      {
+        "type": "address",
         "name": "token",
         "indexed": true
       },
@@ -316,7 +309,7 @@
       {
         "type": "uint256",
         "name": "newDuration",
-        "indexed": false
+        "indexed": true
       }
     ]
   },
@@ -374,6 +367,11 @@
       {
         "type": "address",
         "name": "user",
+        "indexed": true
+      },
+      {
+        "type": "address",
+        "name": "sender",
         "indexed": true
       },
       {
@@ -441,6 +439,19 @@
   },
   {
     "type": "function",
+    "name": "OFFSET19700101",
+    "constant": true,
+    "stateMutability": "view",
+    "payable": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "int256"
+      }
+    ]
+  },
+  {
+    "type": "function",
     "name": "PAUSER_ROLE",
     "constant": true,
     "stateMutability": "view",
@@ -449,6 +460,19 @@
     "outputs": [
       {
         "type": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "SECONDS_PER_DAY",
+    "constant": true,
+    "stateMutability": "view",
+    "payable": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "uint256"
       }
     ]
   },
@@ -712,75 +736,16 @@
   },
   {
     "type": "function",
-    "name": "renew",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "token"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "renewBatch",
-    "constant": false,
-    "payable": false,
-    "inputs": [],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "renewBatchWithUsers",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address[]",
-        "name": "users"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "renewFor",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "user"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "renewForExternal",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "user"
-      },
-      {
-        "type": "address",
-        "name": "token"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
     "name": "renewNative",
     "constant": false,
     "stateMutability": "payable",
     "payable": true,
-    "inputs": [],
+    "inputs": [
+      {
+        "type": "address",
+        "name": "recipient"
+      }
+    ],
     "outputs": []
   },
   {
@@ -795,39 +760,6 @@
         "type": "uint64"
       }
     ]
-  },
-  {
-    "type": "function",
-    "name": "renewWithPermit",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "token"
-      },
-      {
-        "type": "uint256",
-        "name": "deadline"
-      },
-      {
-        "type": "uint256",
-        "name": "amount"
-      },
-      {
-        "type": "uint8",
-        "name": "v"
-      },
-      {
-        "type": "bytes32",
-        "name": "r"
-      },
-      {
-        "type": "bytes32",
-        "name": "s"
-      }
-    ],
-    "outputs": []
   },
   {
     "type": "function",
@@ -959,23 +891,6 @@
   },
   {
     "type": "function",
-    "name": "subscribe",
-    "constant": false,
-    "payable": false,
-    "inputs": [
-      {
-        "type": "address",
-        "name": "token"
-      },
-      {
-        "type": "uint8",
-        "name": "tier"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
     "name": "subscribeNative",
     "constant": false,
     "stateMutability": "payable",
@@ -984,43 +899,10 @@
       {
         "type": "uint8",
         "name": "tier"
-      }
-    ],
-    "outputs": []
-  },
-  {
-    "type": "function",
-    "name": "subscribeWithPermit",
-    "constant": false,
-    "payable": false,
-    "inputs": [
+      },
       {
         "type": "address",
-        "name": "token"
-      },
-      {
-        "type": "uint256",
-        "name": "deadline"
-      },
-      {
-        "type": "uint256",
-        "name": "amount"
-      },
-      {
-        "type": "uint8",
-        "name": "tier"
-      },
-      {
-        "type": "uint8",
-        "name": "v"
-      },
-      {
-        "type": "bytes32",
-        "name": "r"
-      },
-      {
-        "type": "bytes32",
-        "name": "s"
+        "name": "recipient"
       }
     ],
     "outputs": []
@@ -1109,6 +991,10 @@
       {
         "type": "uint8",
         "name": "newTier"
+      },
+      {
+        "type": "address",
+        "name": "recipient"
       }
     ],
     "outputs": []
